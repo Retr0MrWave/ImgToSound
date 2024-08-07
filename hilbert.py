@@ -1,6 +1,11 @@
+import functools
 import math
+
+import numpy as np
 from attrs import define
 from loguru import logger
+from matplotlib import pyplot as plt
+from matplotlib.collections import LineCollection
 
 
 @define
@@ -12,61 +17,75 @@ class Point:
 type Curve = list[Point]
 
 
-def mirror(curve: Curve) -> Curve:
-    curve = [Point(p.y, p.x) for p in curve]
-    return curve
+class HilbertCurveOp:
+    @staticmethod
+    def mirror(curve: np.ndarray) -> np.ndarray:
+        return np.fliplr(curve)
+
+    @staticmethod
+    def negative_mirror(curve: np.ndarray) -> np.ndarray:
+        size = int(np.sqrt(len(curve)))
+        return size - 1 - np.fliplr(curve)
+
+    @staticmethod
+    def shift(curve: np.ndarray, x: int, y: int) -> np.ndarray:
+        return curve + np.array([x, y])[np.newaxis, :]
+
+    @staticmethod
+    def closest_hilbert_size(n: int) -> int:
+        return int(np.ceil(np.log2(n)))
 
 
-def negative_mirror(curve: Curve) -> Curve:
-    size = round(math.sqrt(len(curve)))
-    curve = [Point(-p.y + size-1, -p.x + size-1) for p in curve]
-    return curve
+class HilbertCurve:
+    curve: np.ndarray
 
+    def __init__(self, kernel_size: int):
+        self.curve = self.generate(kernel_size)
 
-def shift(curve: Curve, x: int, y: int) -> Curve:
-    return [Point(p.x + x, p.y + y) for p in curve]
+    def generate(self, iteration: int):
+        if iteration == 1:
+            return np.array([[0, 0], [1, 0], [1, 1], [0, 1]])
 
+        prev = self.generate(iteration - 1)
+        # logger.info(f"Prev: {prev}")
+        prev_size = int(np.sqrt(len(prev)))
 
-def hilbert_curve(iteration: int) -> Curve:
-    if iteration == 0:
-        return [Point(0, 0)]
+        top_left = HilbertCurveOp.mirror(prev)
+        top_right = HilbertCurveOp.shift(prev, prev_size, 0)
+        bottom_right = HilbertCurveOp.shift(prev, prev_size, prev_size)
+        bottom_left = HilbertCurveOp.shift(HilbertCurveOp.negative_mirror(prev), 0, prev_size)
 
-    prev = hilbert_curve(iteration - 1)
-    prev_size = round(math.sqrt(len(prev)))
-    return (mirror(prev) +
-            shift(prev, prev_size, 0) +
-            shift(prev, prev_size, prev_size) +
-            shift(negative_mirror(prev), 0, prev_size))
+        return np.vstack((top_left, top_right, bottom_right, bottom_left))
 
+    def get(self):
+        return self.curve
 
-def print_curve(curve: Curve) -> None:
-    size = round(math.sqrt(len(curve)))
-    output = [[-1 for j in range(size)] for i in range(size)]
+    def __str__(self):
+        size = int(np.sqrt(len(self.curve)))
+        output = np.full((size, size), -1, dtype=int)
+        output[self.curve[:, 0], self.curve[:, 1]] = np.arange(len(self.curve))
+        return '\n'.join(output)
 
-    for i in range(len(curve)):
-        output[curve[i].x][curve[i].y] = i
+    def visualize(self):
+        points = self.curve.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+        lc = LineCollection(segments, cmap='viridis', linewidth=2)
+        lc.set_array(np.linspace(0, 1, len(self.curve)))
 
-    for line in output:
-        print(line)
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.add_collection(lc)
+        ax.autoscale()
+        ax.set_aspect('equal')
+        ax.set_xticks([])
+        ax.set_yticks([])
 
-
-def closest_hilbert_size(n: int) -> int:
-    r = 0
-    while n > 1:
-        n >>= 1
-        r += 1
-
-    return r
+        plt.colorbar(lc, ax=ax, label="progression bruh zaza")
+        plt.tight_layout()
+        plt.show()
 
 
 def main() -> None:
-    print_curve(hilbert_curve(1))
-    print()
-    print_curve(hilbert_curve(2))
-    print()
-    print_curve(hilbert_curve(3))
-    print()
-    print_curve(hilbert_curve(4))
+    HilbertCurve(10).visualize()
 
 
 if __name__ == "__main__":
